@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../providers/ride_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/tts_service.dart';
+import '../../services/websocket_service.dart';
 import 'widgets/camera_preview_widget.dart';
 import 'widgets/score_card.dart';
 import 'widgets/speed_gauge.dart';
@@ -308,7 +309,7 @@ class _ContextChip extends StatelessWidget {
     final labels = {
       'CITY_TRAFFIC': ('City Traffic', Icons.location_city, AppTheme.neonAmber),
       'HIGHWAY': ('Highway', Icons.speed, AppTheme.neonCyan),
-      'EMPTY_ROAD': ('Open Road', Icons.road, AppTheme.neonGreen),
+      'EMPTY_ROAD': ('Open Road', Icons.route, AppTheme.neonGreen),
       'TRAFFIC_JAM': ('Traffic Jam', Icons.traffic, AppTheme.neonRed),
     };
     final info = labels[this.context] ?? ('Unknown', Icons.help_outline, AppTheme.textSecondary);

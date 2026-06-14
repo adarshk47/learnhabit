@@ -122,7 +122,7 @@ class _ScoreRadar extends StatelessWidget {
                 dataSets: [
                   RadarDataSet(
                     dataEntries: scores
-                        .map((s) => RadarEntry(value: s))
+                        .map((s) => RadarEntry(value: s.toDouble()))
                         .toList(),
                     fillColor: AppTheme.neonCyan.withOpacity(0.15),
                     borderColor: AppTheme.neonCyan,
