@@ -32,6 +32,28 @@ class AppColors {
 }
 
 class AppTheme {
+  // Color shorthands used across screens
+  static const Color neonGreen = AppColors.safe;
+  static const Color neonCyan = AppColors.primary;
+  static const Color neonRed = AppColors.danger;
+  static const Color neonAmber = AppColors.warning;
+  static const Color bgDeep = AppColors.background;
+  static const Color bgCard = AppColors.card;
+  static const Color textSecondary = AppColors.textSecondary;
+
+  // TextStyle shorthands used across screens
+  static const TextStyle headlineMedium = TextStyle(
+    color: AppColors.textPrimary,
+    fontSize: 28,
+    fontWeight: FontWeight.w600,
+  );
+  static const TextStyle labelSmall = TextStyle(
+    color: AppColors.textMuted,
+    fontSize: 11,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.5,
+  );
+
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
@@ -47,7 +69,7 @@ class AppTheme {
         onSurface: AppColors.textPrimary,
         onPrimary: AppColors.background,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: AppColors.card,
         elevation: 0,
         shape: RoundedRectangleBorder(
