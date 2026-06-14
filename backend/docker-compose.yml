@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  bikeai-backend:
+    build: .
+    container_name: bikeai-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./bikeai.db
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+      - YOLO_MODEL_PATH=yolov8n.pt
+      - CONFIDENCE_THRESHOLD=0.5
+      - VIDEO_FPS=15
+      - DEBUG=false
+      - CORS_ORIGINS=["*"]
+    volumes:
+      - bikeai_data:/app/data
+      - bikeai_reports:/app/reports
+      - bikeai_uploads:/app/uploads
+      - bikeai_db:/app/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  bikeai_data:
+  bikeai_reports:
+  bikeai_uploads:
+  bikeai_db:
