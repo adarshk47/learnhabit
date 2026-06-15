@@ -23,7 +23,6 @@ dependencies:
   syncfusion_flutter_gauges: ^23.2.7
   video_player: ^2.8.1
   http: ^1.1.2
-  connectivity_plus: ^5.0.2
   shared_preferences: ^2.2.2
   intl: ^0.18.1
   share_plus: ^7.2.1
