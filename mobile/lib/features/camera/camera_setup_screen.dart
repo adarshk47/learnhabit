@@ -1,5 +1,7 @@
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../providers/settings_provider.dart';
@@ -16,6 +18,8 @@ class _CameraSetupScreenState extends ConsumerState<CameraSetupScreen> {
   final _urlController = TextEditingController();
   _TestStatus _status = _TestStatus.idle;
   String _statusMsg = '';
+  late CameraType _selectedType;
+  bool _phoneStarting = false;
 
   final _presetUrls = [
     ('GoPro Hero 8+', 'rtsp://10.5.5.9:554/live'),
@@ -27,7 +31,10 @@ class _CameraSetupScreenState extends ConsumerState<CameraSetupScreen> {
   @override
   void initState() {
     super.initState();
-    _urlController.text = ref.read(settingsProvider).cameraRtspUrl;
+    final settings = ref.read(settingsProvider);
+    _urlController.text = settings.cameraRtspUrl;
+    _selectedType = settings.cameraType;
+    if (_selectedType == CameraType.PHONE) _startPhoneCam();
   }
 
   @override
@@ -36,15 +43,56 @@ class _CameraSetupScreenState extends ConsumerState<CameraSetupScreen> {
     super.dispose();
   }
 
+  Future<void> _selectType(CameraType type) async {
+    if (_selectedType == type) return;
+    CameraService.instance.stopStreaming();
+    setState(() {
+      _selectedType = type;
+      _statusMsg = '';
+      _status = _TestStatus.idle;
+    });
+    await ref.read(settingsProvider.notifier).updateCameraType(type);
+    if (type == CameraType.PHONE) await _startPhoneCam();
+  }
+
+  Future<void> _startPhoneCam() async {
+    setState(() => _phoneStarting = true);
+    final perm = await Permission.camera.request();
+    if (!perm.isGranted) {
+      if (mounted) {
+        setState(() {
+          _phoneStarting = false;
+          _status = _TestStatus.failed;
+          _statusMsg =
+              'Camera permission denied. Go to Settings → Apps → BikeAI → Permissions → Camera.';
+        });
+      }
+      return;
+    }
+    final ok = await CameraService.instance.startPhoneCamera();
+    if (mounted) {
+      setState(() {
+        _phoneStarting = false;
+        if (!ok) {
+          _status = _TestStatus.failed;
+          _statusMsg = 'Failed to open phone camera.';
+        }
+      });
+    }
+  }
+
   Future<void> _testConnection() async {
     setState(() {
       _status = _TestStatus.testing;
       _statusMsg = 'Testing connection…';
     });
-    final ok = await CameraService.instance.testConnection(_urlController.text);
+    final ok =
+        await CameraService.instance.testConnection(_urlController.text);
     setState(() {
       _status = ok ? _TestStatus.ok : _TestStatus.failed;
-      _statusMsg = ok ? 'Connected successfully!' : 'Connection failed. Check URL and network.';
+      _statusMsg = ok
+          ? 'Connected successfully!'
+          : 'Connection failed. Check URL and network.';
     });
   }
 
@@ -69,139 +117,37 @@ class _CameraSetupScreenState extends ConsumerState<CameraSetupScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // Type selector
           _SectionHeader('Connection Type'),
           const SizedBox(height: 12),
           Row(
             children: [
               _TypeChip(
-                  label: 'WiFi RTSP',
-                  icon: Icons.wifi,
-                  selected: true,
-                  onTap: () {}),
+                label: 'WiFi RTSP',
+                icon: Icons.wifi,
+                selected: _selectedType == CameraType.WIFI,
+                onTap: () => _selectType(CameraType.WIFI),
+              ),
               const SizedBox(width: 10),
               _TypeChip(
-                  label: 'Bluetooth',
-                  icon: Icons.bluetooth,
-                  selected: false,
-                  onTap: () => _showComingSoon()),
+                label: 'Bluetooth',
+                icon: Icons.bluetooth,
+                selected: false,
+                onTap: _showComingSoon,
+              ),
               const SizedBox(width: 10),
               _TypeChip(
-                  label: 'Phone Cam',
-                  icon: Icons.camera_alt,
-                  selected: false,
-                  onTap: () {}),
+                label: 'Phone Cam',
+                icon: Icons.camera_alt,
+                selected: _selectedType == CameraType.PHONE,
+                onTap: () => _selectType(CameraType.PHONE),
+              ),
             ],
           ),
           const SizedBox(height: 24),
-          _SectionHeader('RTSP URL'),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _urlController,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'rtsp://192.168.x.x:554/live',
-              hintStyle: TextStyle(color: AppTheme.textSecondary),
-              filled: true,
-              fillColor: AppTheme.bgCard,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppTheme.neonCyan.withOpacity(0.3)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppTheme.neonCyan),
-              ),
-              prefixIcon: Icon(Icons.link, color: AppTheme.neonCyan),
-              suffixIcon: IconButton(
-                icon: Icon(Icons.clear, color: AppTheme.textSecondary),
-                onPressed: () => _urlController.clear(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _testConnection,
-                  icon: _status == _TestStatus.testing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.play_circle_outline),
-                  label: const Text('Test Connection'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.bgCard,
-                    foregroundColor: AppTheme.neonCyan,
-                    side: BorderSide(color: AppTheme.neonCyan.withOpacity(0.4)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _saveUrl,
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('Save'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.neonCyan,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (_statusMsg.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _status == _TestStatus.ok
-                    ? AppTheme.neonGreen.withOpacity(0.1)
-                    : AppTheme.neonRed.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: _status == _TestStatus.ok
-                        ? AppTheme.neonGreen.withOpacity(0.4)
-                        : AppTheme.neonRed.withOpacity(0.4)),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    _status == _TestStatus.ok ? Icons.check_circle : Icons.error_outline,
-                    color: _status == _TestStatus.ok ? AppTheme.neonGreen : AppTheme.neonRed,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(_statusMsg,
-                      style: TextStyle(
-                          color: _status == _TestStatus.ok
-                              ? AppTheme.neonGreen
-                              : AppTheme.neonRed)),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          _SectionHeader('Quick Presets'),
-          const SizedBox(height: 12),
-          ..._presetUrls.map((p) => _PresetTile(
-                name: p.$1,
-                url: p.$2,
-                onTap: () => _urlController.text = p.$2,
-              )),
+          if (_selectedType == CameraType.PHONE)
+            ..._buildPhoneSection()
+          else
+            ..._buildWifiSection(),
           const SizedBox(height: 24),
           _SectionHeader('Tips'),
           const SizedBox(height: 10),
@@ -223,6 +169,140 @@ class _CameraSetupScreenState extends ConsumerState<CameraSetupScreen> {
     );
   }
 
+  List<Widget> _buildPhoneSection() {
+    final ctrl = CameraService.instance.phoneController;
+    return [
+      _SectionHeader('Phone Camera Preview'),
+      const SizedBox(height: 12),
+      if (_phoneStarting)
+        const SizedBox(
+          height: 180,
+          child: Center(child: CircularProgressIndicator()),
+        )
+      else if (ctrl != null && ctrl.value.isInitialized)
+        ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: SizedBox(height: 240, child: CameraPreview(ctrl)),
+        )
+      else
+        Container(
+          height: 160,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppTheme.bgCard,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.neonCyan.withOpacity(0.3)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.camera_alt_outlined, color: AppTheme.neonCyan, size: 44),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: _startPhoneCam,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Start Phone Camera'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.neonCyan,
+                  foregroundColor: Colors.black,
+                ),
+              ),
+            ],
+          ),
+        ),
+      if (_statusMsg.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        _StatusBox(status: _status, message: _statusMsg),
+      ],
+    ];
+  }
+
+  List<Widget> _buildWifiSection() {
+    return [
+      _SectionHeader('RTSP URL'),
+      const SizedBox(height: 10),
+      TextField(
+        controller: _urlController,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: 'rtsp://192.168.x.x:554/live',
+          hintStyle: TextStyle(color: AppTheme.textSecondary),
+          filled: true,
+          fillColor: AppTheme.bgCard,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppTheme.neonCyan.withOpacity(0.3)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppTheme.neonCyan),
+          ),
+          prefixIcon: Icon(Icons.link, color: AppTheme.neonCyan),
+          suffixIcon: IconButton(
+            icon: Icon(Icons.clear, color: AppTheme.textSecondary),
+            onPressed: () => _urlController.clear(),
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _testConnection,
+              icon: _status == _TestStatus.testing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.play_circle_outline),
+              label: const Text('Test Connection'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.bgCard,
+                foregroundColor: AppTheme.neonCyan,
+                side: BorderSide(color: AppTheme.neonCyan.withOpacity(0.4)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _saveUrl,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('Save'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.neonCyan,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ],
+      ),
+      if (_statusMsg.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        _StatusBox(status: _status, message: _statusMsg),
+      ],
+      const SizedBox(height: 24),
+      _SectionHeader('Quick Presets'),
+      const SizedBox(height: 12),
+      ..._presetUrls.map((p) => _PresetTile(
+            name: p.$1,
+            url: p.$2,
+            onTap: () => _urlController.text = p.$2,
+          )),
+    ];
+  }
+
   void _showComingSoon() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Bluetooth support coming in v1.1')),
@@ -231,6 +311,39 @@ class _CameraSetupScreenState extends ConsumerState<CameraSetupScreen> {
 }
 
 enum _TestStatus { idle, testing, ok, failed }
+
+class _StatusBox extends StatelessWidget {
+  final _TestStatus status;
+  final String message;
+  const _StatusBox({required this.status, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final isOk = status == _TestStatus.ok;
+    final color = isOk ? AppTheme.neonGreen : AppTheme.neonRed;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isOk ? Icons.check_circle : Icons.error_outline,
+            color: color,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message, style: TextStyle(color: color, fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SectionHeader extends StatelessWidget {
   final String title;
@@ -259,33 +372,36 @@ class _TypeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected
-              ? AppTheme.neonCyan.withOpacity(0.15)
-              : AppTheme.bgCard,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: selected
-                  ? AppTheme.neonCyan
-                  : Colors.white.withOpacity(0.1)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon,
-                color: selected ? AppTheme.neonCyan : AppTheme.textSecondary,
-                size: 20),
-            const SizedBox(height: 4),
-            Text(label,
-                style: TextStyle(
-                    color: selected
-                        ? AppTheme.neonCyan
-                        : AppTheme.textSecondary,
-                    fontSize: 11)),
-          ],
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppTheme.neonCyan.withOpacity(0.15)
+                : AppTheme.bgCard,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: selected
+                    ? AppTheme.neonCyan
+                    : Colors.white.withOpacity(0.1)),
+          ),
+          child: Column(
+            children: [
+              Icon(icon,
+                  color: selected ? AppTheme.neonCyan : AppTheme.textSecondary,
+                  size: 20),
+              const SizedBox(height: 4),
+              Text(label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: selected
+                          ? AppTheme.neonCyan
+                          : AppTheme.textSecondary,
+                      fontSize: 11)),
+            ],
+          ),
         ),
       ),
     );
@@ -313,8 +429,7 @@ class _PresetTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.videocam_outlined,
-                color: AppTheme.neonCyan, size: 18),
+            Icon(Icons.videocam_outlined, color: AppTheme.neonCyan, size: 18),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -372,8 +487,8 @@ class _TipCard extends StatelessWidget {
                         fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 Text(body,
-                    style: TextStyle(
-                        color: AppTheme.textSecondary, fontSize: 12)),
+                    style:
+                        TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
               ],
             ),
           ),

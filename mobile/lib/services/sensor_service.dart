@@ -28,6 +28,10 @@ class SensorService {
   Future<bool> start() async {
     if (_isRunning) return true;
 
+    // Check if device location service is on
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return false;
+
     // Check GPS permissions
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -35,6 +39,9 @@ class SensorService {
       if (permission == LocationPermission.denied) {
         return false;
       }
+    }
+    if (permission == LocationPermission.deniedForever) {
+      return false;
     }
 
     // Accelerometer
