@@ -8,6 +8,7 @@ import '../models/analysis_result.dart';
 import '../models/event_model.dart';
 import '../services/websocket_service.dart';
 import '../services/sensor_service.dart';
+import '../services/camera_service.dart';
 import '../services/database_service.dart';
 import '../services/tts_service.dart';
 import '../providers/settings_provider.dart';
@@ -118,6 +119,9 @@ class RideStateNotifier extends StateNotifier<RideState> {
 
     await _wsService.connect(settings.backendWsUrl);
     await SensorService.instance.start();
+    if (settings.cameraType == CameraType.PHONE) {
+      await CameraService.instance.startPhoneCamera();
+    }
     await TtsService.instance.init();
     TtsService.instance.setEnabled(settings.enableVoiceAlerts);
 
@@ -174,6 +178,7 @@ class RideStateNotifier extends StateNotifier<RideState> {
     _sensorSub?.cancel();
     _analysisSub?.cancel();
     SensorService.instance.stop();
+    CameraService.instance.stopStreaming();
 
     final ride = state.currentRide;
     if (ride != null) {

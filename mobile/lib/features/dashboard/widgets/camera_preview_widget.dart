@@ -1,14 +1,26 @@
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/theme/app_theme.dart';
 import '../../../models/analysis_result.dart';
+import '../../../providers/ride_provider.dart';
+import '../../../services/camera_service.dart';
 import 'detected_objects_overlay.dart';
 
-class CameraPreviewWidget extends StatelessWidget {
+class CameraPreviewWidget extends ConsumerWidget {
   final AnalysisResult? analysisResult;
   const CameraPreviewWidget({super.key, this.analysisResult});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch ride state so this rebuilds when the ride starts/stops
+    // (which is when the camera is initialized/stopped)
+    ref.watch(rideStateProvider);
+
+    final ctrl = CameraService.instance.phoneController;
+    final showPhoneCam = ctrl != null && ctrl.value.isInitialized;
+
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: Container(
@@ -21,12 +33,12 @@ class CameraPreviewWidget extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Placeholder / mock camera feed
-            _CameraBackground(),
-            // Object detection overlay
+            if (showPhoneCam)
+              CameraPreview(ctrl)
+            else
+              _CameraBackground(),
             if (analysisResult != null)
               DetectedObjectsOverlay(objects: analysisResult!.detectedObjects),
-            // HUD overlay
             _HudOverlay(result: analysisResult),
           ],
         ),
@@ -42,7 +54,6 @@ class _CameraBackground extends StatelessWidget {
       color: const Color(0xFF0D0D1A),
       child: Stack(
         children: [
-          // Simulated road perspective lines
           CustomPaint(painter: _RoadPainter(), size: Size.infinite),
           Center(
             child: Column(
@@ -54,6 +65,12 @@ class _CameraBackground extends StatelessWidget {
                 Text('Camera Feed',
                     style: AppTheme.labelSmall
                         .copyWith(color: AppTheme.textSecondary.withOpacity(0.4))),
+                const SizedBox(height: 4),
+                Text('Select Phone Cam in Camera Setup\nthen press START RIDE',
+                    textAlign: TextAlign.center,
+                    style: AppTheme.labelSmall.copyWith(
+                        color: AppTheme.textSecondary.withOpacity(0.25),
+                        fontSize: 10)),
               ],
             ),
           ),
@@ -70,7 +87,6 @@ class _RoadPainter extends CustomPainter {
       ..color = Colors.white.withOpacity(0.03)
       ..strokeWidth = 1;
     final cx = size.width / 2;
-    // Perspective lines
     for (var x in [0.2, 0.35, 0.65, 0.8]) {
       canvas.drawLine(
         Offset(size.width * x, size.height),
@@ -78,7 +94,6 @@ class _RoadPainter extends CustomPainter {
         paint,
       );
     }
-    // Horizon line
     canvas.drawLine(
       Offset(0, size.height * 0.4),
       Offset(size.width, size.height * 0.4),
@@ -102,14 +117,12 @@ class _HudOverlay extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top-left: traffic density
             if (result != null)
               _HudChip(
                 label: 'Density: ${(result!.trafficDensity * 100).toStringAsFixed(0)}%',
                 color: AppTheme.neonCyan,
               ),
             const Spacer(),
-            // Bottom: object count
             if (result != null && result!.detectedObjects.isNotEmpty)
               Row(
                 children: [
@@ -119,8 +132,7 @@ class _HudOverlay extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   if (result!.oncomingVehicle)
-                    _HudChip(
-                        label: 'ONCOMING', color: AppTheme.neonRed),
+                    _HudChip(label: 'ONCOMING', color: AppTheme.neonRed),
                 ],
               ),
           ],
