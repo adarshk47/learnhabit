@@ -7,7 +7,12 @@
 // check passes without us having to fork/upgrade each plugin individually.
 subprojects {
     afterEvaluate { project ->
-        if (project.extensions.findByName("android") != null) {
+        // Only bump the plugin library modules. Leave :app alone so Flutter's
+        // own gradle plugin can wire up the APK output/copy tasks without us
+        // re-touching its android {} block in afterEvaluate (which can break
+        // APK discovery on AGP 9.0).
+        if (project.name != "app" &&
+                project.extensions.findByName("android") != null) {
             project.android {
                 compileSdk = 36
             }
