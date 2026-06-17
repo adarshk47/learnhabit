@@ -15,6 +15,10 @@ class SensorService {
   double _speedKmh = 0;
   double _heading = 0;
 
+  // For deriving speed from position deltas when position.speed is unavailable.
+  Position? _lastFixPos;
+  DateTime? _lastFixTime;
+
   StreamSubscription? _accelSub;
   StreamSubscription? _gyroSub;
   StreamSubscription<Position>? _gpsSub;
@@ -64,15 +68,44 @@ class SensorService {
 
     // GPS
     const locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 2, // meters
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 0, // emit on every fix so speed updates smoothly
     );
     _gpsSub = Geolocator.getPositionStream(locationSettings: locationSettings)
         .listen((Position position) {
       _latitude = position.latitude;
       _longitude = position.longitude;
-      _speedKmh = (position.speed * 3.6).clamp(0, double.infinity);
       _heading = position.heading;
+
+      // Primary source: the GPS-reported speed (m/s -> km/h).
+      double speedKmh = (position.speed.isFinite && position.speed > 0)
+          ? position.speed * 3.6
+          : 0;
+
+      // Fallback: some Android devices never populate position.speed, so derive
+      // speed from the distance/time between consecutive fixes.
+      final now = DateTime.now();
+      if (_lastFixPos != null && _lastFixTime != null) {
+        final dtSec = now.difference(_lastFixTime!).inMilliseconds / 1000.0;
+        if (dtSec > 0) {
+          final distM = Geolocator.distanceBetween(
+            _lastFixPos!.latitude,
+            _lastFixPos!.longitude,
+            position.latitude,
+            position.longitude,
+          );
+          final derived = (distM / dtSec) * 3.6;
+          // Use the derived value only when GPS didn't give us a usable one
+          // and the movement is above GPS jitter (~ a few meters).
+          if (speedKmh <= 0 && distM > 1.5 && derived.isFinite) {
+            speedKmh = derived;
+          }
+        }
+      }
+      _lastFixPos = position;
+      _lastFixTime = now;
+
+      _speedKmh = speedKmh.clamp(0, 400);
     });
 
     // Fusion timer - publish at ~50Hz
@@ -112,6 +145,9 @@ class SensorService {
     _accelSub = null;
     _gyroSub = null;
     _gpsSub = null;
+    _lastFixPos = null;
+    _lastFixTime = null;
+    _speedKmh = 0;
     _isRunning = false;
   }
 
